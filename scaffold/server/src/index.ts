@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { createServer } from 'node:http';
 import { config } from './config.js';
@@ -6,7 +9,10 @@ import { pingRedis } from './redis.js';
 import { ensureIndexes } from './models.js';
 import { createWebhooksRouter } from './routes/webhooks.js';
 import { createGraderRouter } from './routes/grader.js';
+import { createAuthRouter } from './routes/auth.js';
+import { createApiRouter } from './routes/api.js';
 import { startOutboundWorker } from './services/outbound.js';
+import { attachWebSocketServer } from './ws.js';
 
 const app = express();
 let isReady = false;
@@ -27,7 +33,18 @@ app.use('/webhooks', createWebhooksRouter());
 
 app.use(express.json({ limit: '2mb' }));
 
+app.use('/auth', createAuthRouter());
+app.use('/api', createApiRouter());
 app.use('/__grader', createGraderRouter());
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const webDistDir = path.resolve(__dirname, '../../web/dist');
+if (fs.existsSync(webDistDir)) {
+  app.use(express.static(webDistDir));
+  app.get('*', (_req: Request, res: Response) => {
+    res.sendFile(path.join(webDistDir, 'index.html'));
+  });
+}
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof SyntaxError && 'status' in err && (err as { status?: number }).status === 400) {
@@ -49,6 +66,7 @@ async function bootstrap(): Promise<void> {
 }
 
 const server = createServer(app);
+attachWebSocketServer(server);
 
 bootstrap()
   .then(() => {

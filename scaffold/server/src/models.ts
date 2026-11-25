@@ -39,6 +39,15 @@ export interface WorkspaceSeqDoc {
   seq: number;
 }
 
+export interface PrivateNoteDoc {
+  workspace: string;
+  contact: string;
+  author_sub: string;
+  author_name: string;
+  text: string;
+  created_at: Date;
+}
+
 export function conversationsCol(db: Db): Collection<ConversationDoc> {
   return db.collection<ConversationDoc>('conversations');
 }
@@ -55,6 +64,10 @@ export function workspaceSeqsCol(db: Db): Collection<WorkspaceSeqDoc> {
   return db.collection<WorkspaceSeqDoc>('workspace_seqs');
 }
 
+export function notesCol(db: Db): Collection<PrivateNoteDoc> {
+  return db.collection<PrivateNoteDoc>('notes');
+}
+
 export async function ensureIndexes(db: Db): Promise<void> {
   await Promise.all([
     conversationsCol(db).createIndex({ workspace: 1, contact: 1 }, { unique: true }),
@@ -67,6 +80,7 @@ export async function ensureIndexes(db: Db): Promise<void> {
 
     processedEventsCol(db).createIndex({ event_id: 1 }, { unique: true }),
     workspaceSeqsCol(db).createIndex({ workspace: 1 }, { unique: true }),
+    notesCol(db).createIndex({ workspace: 1, contact: 1, created_at: 1 }),
   ]);
 }
 
