@@ -308,10 +308,15 @@ export function createApiRouter(): Router {
 
     const contact = decodeURIComponent(String(req.params.contact || ''));
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const text = typeof body.text === 'string' ? body.text.trim() : '';
+    const ciphertext = typeof body.ciphertext === 'string' ? body.ciphertext.trim() : '';
+    const iv = typeof body.iv === 'string' ? body.iv.trim() : '';
+    const alg = body.alg === 'AES-GCM-256' ? ('AES-GCM-256' as const) : null;
+    const key_id = typeof body.key_id === 'string' ? body.key_id.trim() : 'default';
 
     if (!contact) return res.status(400).json({ error: 'missing contact' });
-    if (!text) return res.status(400).json({ error: 'missing text' });
+    if (!ciphertext || !iv || !alg) {
+      return res.status(400).json({ error: 'missing ciphertext, iv, or valid alg (AES-GCM-256)' });
+    }
 
     const db = await getDb();
     const now = new Date();
@@ -320,7 +325,10 @@ export function createApiRouter(): Router {
       contact,
       author_sub: req.user!.sub,
       author_name: req.user!.name,
-      text,
+      ciphertext,
+      iv,
+      alg,
+      key_id,
       created_at: now,
     };
 

@@ -30,3 +30,10 @@ export async function clearAppRedisKeys(): Promise<void> {
     }
   } while (cursor !== '0');
 }
+
+export async function closeRedis(): Promise<void> {
+  if (redis) {
+    redis.disconnect();
+    redis = undefined;
+  }
+}

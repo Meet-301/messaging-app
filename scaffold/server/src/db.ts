@@ -21,3 +21,10 @@ export async function pingDb(): Promise<boolean> {
     return false;
   }
 }
+
+export async function closeDb(): Promise<void> {
+  if (client) {
+    await client.close();
+    client = undefined;
+  }
+}

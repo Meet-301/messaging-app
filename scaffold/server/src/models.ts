@@ -44,7 +44,10 @@ export interface PrivateNoteDoc {
   contact: string;
   author_sub: string;
   author_name: string;
-  text: string;
+  ciphertext: string;
+  iv: string;
+  alg: 'AES-GCM-256';
+  key_id: string;
   created_at: Date;
 }
 

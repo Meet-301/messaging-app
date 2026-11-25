@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  decryptNote,
+  deriveWorkspaceKey,
+  encryptNote,
+  getWorkspacePassphrase,
+  setWorkspacePassphrase,
+} from './crypto';
 
 interface WorkspaceMembership {
   id: string;
@@ -44,7 +51,10 @@ interface PrivateNote {
   contact: string;
   author_sub: string;
   author_name: string;
-  text: string;
+  ciphertext: string;
+  iv: string;
+  alg: 'AES-GCM-256';
+  key_id: string;
   created_at: string;
 }
 
@@ -75,10 +85,53 @@ export function App() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [notePassphrase, setNotePassphrase] = useState('');
+  const [noteKey, setNoteKey] = useState<{ key: CryptoKey; keyId: string } | null>(null);
+  const [decryptedNotes, setDecryptedNotes] = useState<Record<string, string | null>>({});
 
   const lastSeqRef = useRef<number | null>(null);
   const selectedContactRef = useRef<string | null>(null);
   selectedContactRef.current = selectedContact;
+
+  useEffect(() => {
+    if (!workspace) {
+      setNoteKey(null);
+      return;
+    }
+    const pass = getWorkspacePassphrase(workspace);
+    setNotePassphrase(pass);
+    let cancelled = false;
+    deriveWorkspaceKey(workspace, pass)
+      .then((derived) => {
+        if (!cancelled) setNoteKey(derived);
+      })
+      .catch(() => {
+        if (!cancelled) setNoteKey(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspace]);
+
+  useEffect(() => {
+    if (!noteKey || notes.length === 0) {
+      setDecryptedNotes({});
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      notes.map(async (n, idx) => {
+        const k = n._id || `n_${idx}`;
+        const plain = await decryptNote(noteKey.key, n.ciphertext, n.iv);
+        return [k, plain] as const;
+      })
+    ).then((entries) => {
+      if (!cancelled) setDecryptedNotes(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [notes, noteKey]);
 
   useEffect(() => {
     fetch('/api/me')
@@ -402,12 +455,23 @@ export function App() {
           return;
         }
       } else {
+        if (!noteKey) {
+          setActionError('Encryption key not ready');
+          return;
+        }
+        const { ciphertext, iv } = await encryptNote(noteKey.key, text);
         const res = await fetch(
           `/api/conversations/${encodeURIComponent(selectedContact)}/notes`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ workspace, text }),
+            body: JSON.stringify({
+              workspace,
+              ciphertext,
+              iv,
+              alg: 'AES-GCM-256',
+              key_id: noteKey.keyId,
+            }),
           }
         );
         if (!res.ok) {
@@ -419,6 +483,14 @@ export function App() {
     } finally {
       setSending(false);
     }
+  }
+
+  async function handlePassphraseChange(nextPass: string) {
+    setNotePassphrase(nextPass);
+    if (!workspace) return;
+    setWorkspacePassphrase(workspace, nextPass);
+    const derived = await deriveWorkspaceKey(workspace, nextPass || getWorkspacePassphrase(workspace));
+    setNoteKey(derived);
   }
 
   if (authLoading) {
@@ -574,13 +646,22 @@ export function App() {
               <div className="messages-scroll">
                 {timeline.map((item) => {
                   if (item.kind === 'note') {
+                    const plain = decryptedNotes[item.key];
                     return (
                       <div key={item.key} className="msg-row note">
                         <div className="bubble">
-                          <strong>Internal Note ({item.data.author_name}):</strong> {item.data.text}
+                          <strong>🔒 Internal Note ({item.data.author_name}):</strong>{' '}
+                          {plain === undefined
+                            ? 'Decrypting…'
+                            : plain === null
+                              ? 'Unable to decrypt (wrong workspace key)'
+                              : plain}
                         </div>
                         <div className="msg-footer">
                           <span>{formatTime(item.data.created_at)}</span>
+                          <span>
+                            {item.data.alg} · key:{item.data.key_id}
+                          </span>
                         </div>
                       </div>
                     );
@@ -614,7 +695,7 @@ export function App() {
                     className={`mode-btn ${composerMode === 'note' ? 'active-note' : ''}`}
                     onClick={() => setComposerMode('note')}
                   >
-                    Internal Note
+                    🔒 Internal Note (E2EE)
                   </button>
                 </div>
                 <form className="composer-form" onSubmit={handleSend}>
@@ -625,7 +706,7 @@ export function App() {
                     placeholder={
                       composerMode === 'reply'
                         ? 'Write a reply to the customer…'
-                        : 'Write a private internal note for your team…'
+                        : 'Write an end-to-end encrypted note for your team…'
                     }
                   />
                   <button className="btn-primary" type="submit" disabled={sending || !draft.trim()}>
@@ -642,6 +723,27 @@ export function App() {
           <div className="detail-group">
             <div className="detail-label">Workspace</div>
             <div>{workspace}</div>
+          </div>
+          <div className="detail-group">
+            <div className="detail-label">Note Encryption Key (E2EE)</div>
+            <input
+              type="password"
+              value={notePassphrase}
+              onChange={(e) => void handlePassphraseChange(e.target.value)}
+              placeholder="Workspace passphrase"
+              style={{
+                width: '100%',
+                padding: '6px 8px',
+                borderRadius: 6,
+                border: '1px solid #d1d5db',
+                fontSize: 12,
+              }}
+            />
+            {noteKey && (
+              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                AES-GCM-256 · key:{noteKey.keyId}
+              </div>
+            )}
           </div>
           {activeConv ? (
             <>
