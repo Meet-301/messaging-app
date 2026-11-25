@@ -19,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const net = require('net');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 
 const ROOT = path.resolve(process.env.SB_ROOT || path.join(__dirname, '..'));
 const PIGEON = process.env.PIGEON_URL || 'http://localhost:4010';
@@ -94,7 +94,11 @@ function killInstance(index) {
   if (!inst || !inst.child) return;
   inst.alive = false;
   try {
-    process.kill(-inst.child.pid, 'SIGKILL'); // the whole process group, no warning
+    if (process.platform === 'win32') {
+      execFileSync('taskkill', ['/PID', String(inst.child.pid), '/T', '/F'], { stdio: 'ignore' });
+    } else {
+      process.kill(-inst.child.pid, 'SIGKILL'); // the whole process group, no warning
+    }
   } catch (e) {
     /* already gone */
   }

@@ -89,12 +89,22 @@ export function isDuplicateKeyError(err: unknown): boolean {
 }
 
 export async function nextWorkspaceSeq(db: Db, workspace: string): Promise<number> {
-  const res = await workspaceSeqsCol(db).findOneAndUpdate(
-    { workspace },
-    { $inc: { seq: 1 } },
-    { upsert: true, returnDocument: 'after' }
-  );
-  return res!.seq;
+  try {
+    const res = await workspaceSeqsCol(db).findOneAndUpdate(
+      { workspace },
+      { $inc: { seq: 1 } },
+      { upsert: true, returnDocument: 'after' }
+    );
+    return res!.seq;
+  } catch (err) {
+    if (!isDuplicateKeyError(err)) throw err;
+    const res = await workspaceSeqsCol(db).findOneAndUpdate(
+      { workspace },
+      { $inc: { seq: 1 } },
+      { returnDocument: 'after' }
+    );
+    return res!.seq;
+  }
 }
 
 export async function emitWorkspaceEvent(

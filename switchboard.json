@@ -1,5 +1,5 @@
 {
   "install": "npm run scaffold:install",
-  "start": "npm --prefix scaffold/server start",
+  "start": "node scaffold/server/node_modules/tsx/dist/cli.mjs scaffold/server/src/index.ts",
   "health": "/healthz"
 }
