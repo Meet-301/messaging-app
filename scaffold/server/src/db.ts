@@ -11,3 +11,13 @@ export async function getDb(): Promise<Db> {
   }
   return client.db();
 }
+
+export async function pingDb(): Promise<boolean> {
+  try {
+    const db = await getDb();
+    await db.command({ ping: 1 });
+    return true;
+  } catch {
+    return false;
+  }
+}
